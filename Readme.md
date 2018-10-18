@@ -1,4 +1,9 @@
 # cordova-plugin-fastrde-mqtt
+
+## installation notes
+Using cordova android > 7 please read this.
+https://gist.github.com/joeljeske/68121fa6d643e0937f50458d0172e16e
+
 #### mqtt.init(options)
 Initialize the mqtt-client with the given options.
 ```
@@ -6,13 +11,13 @@ Initialize the mqtt-client with the given options.
     port - port to connect to [default 1883]
     qos - Quality of Service level[default 0]
     clientId - Unique Identifier for the Client [default cordova_mqtt_<random>]
-    username - username for broker authentication [default none] 
+    username - username for broker authentication [default none]
     password - password for broker authentication [default none]
     ssl - should ssl be used [default false]
     keepAlive - keepAlive sending interval in seconds [default 10]
     timeout - session timeouts after <timeout> seconds [default 30]
     cleanSession - clean Session at disconnect [default true]
-    protocol - mqtt protocol level [default 4] 
+    protocol - mqtt protocol level [default 4]
     offlineCaching - should mesages be cached in sqlite before sending [default true]
 ```
 #### mqtt.connect()
@@ -41,27 +46,27 @@ Subscribes to the topic with the given options
 #### mqtt.on(event, success, error)
 set callback functions for the given event.
 ```
-    event - could be 
+    event - could be
       "init":
 
-      "connect": 
+      "connect":
         success(status)
         error(errorMessage)
-      "disconnect": 
+      "disconnect":
         success(status)
         error(errorMessage)
-      "publish": 
+      "publish":
         success(message)
         error(errorMessage)
-      "subscribe": 
+      "subscribe":
         success(subscribtion)
         error(errorMessage)
-      "unsubscribe": 
+      "unsubscribe":
         success(topic)
         error(errorMessage)
-     "message": 
+     "message":
         success(message)
-    
+
     success - callback that get called on success of the event
     error - callback that get called on error of the event
 ```
