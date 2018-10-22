@@ -229,9 +229,6 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
           JSONObject ret = new JSONObject();
           ret.put("status", (client != null && client.isConnected()) ? 1 : 0);
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
-        } catch(MqttException e) {
-          Log.d(TAG, "Exception", e);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
         } catch(JSONException e1) {
           Log.d(TAG, "Exception", e1);
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e1.getMessage()));
@@ -253,7 +250,6 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
           long startTime = System.currentTimeMillis();
           lock.lock();
           client.publish(topic, msg.getBytes(), qos, retained);
-          lock.unlock();
           Log.d(TAG, "Time: " + (System.currentTimeMillis()-startTime) + "[ms]");
           JSONObject ret = new JSONObject();
           if (id != null){
