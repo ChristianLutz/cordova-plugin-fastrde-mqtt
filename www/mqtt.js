@@ -13,18 +13,19 @@ var mqtt={
   protocol: null,
   will: null,
   cache: null,
-  reconnectInterval: 5,
+  reconnectInterval: 10000,
+  sendCacheInterval: null,
 
   init: function(options){
     mqtt.host = required(options.host);
     mqtt.port = optional(options.port, 1883);
     mqtt.options = {
       qos  : optional(options.qos, 0),
-      clientId : optional(options.clientId, 'cordova_mqtt_' + Math.random().toString(16).substr(2, 8)),
+      clientId : optional(options.clientId, null),
       username : optional(options.username, null),
       password : optional(options.password, null),
       ssl : optional(options.ssl, false),
-      keepAlive : optional(options.keepAlive, 10),
+      keepAlive : optional(options.keepAlive, 20),
       timeout : optional(options.timeout, 30),
       cleanSession : optional(options.cleanSession, true),
       protocol : optional(options.protocol, 4)
@@ -36,14 +37,14 @@ var mqtt={
         function(db) {
           db.executeSql("PRAGMA synchronous=OFF", [], function(){
           }, function(error){
-            console.log("PRAGMA error: ",error);
+            console.log("PRAGMA error: ", error);
             return false;
           });
           if (mqtt.debug_deleteTable){
             db.transaction(function (tx) {
               tx.executeSql("DROP TABLE cache;",
                 function createSuccess(tx, res) {
-                  console.log("Cache DB dropped");
+                  console.log("MQTT - Debug Mode: Cache DB dropped");
                 }
               );
               mqtt.debug_deleteTable = false;
@@ -52,28 +53,44 @@ var mqtt={
           db.transaction(function (tx) {
             tx.executeSql("CREATE TABLE IF NOT EXISTS cache(id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT, message INT, qos INT, retain INT, sending INT)",[],
               function createSuccess(tx, res){
-                console.log("Cache DB created");
+                console.log("MQTT - Cache DB created");
                 document.addEventListener("online", mqtt.onOnline, false);
                 document.addEventListener("offline", mqtt.onOffline, false);
-                if (!mqtt.isOnline()) {
-                  mqtt._reconnect();
-                }
                 mqtt.onInit();
               },
               function createError(){
-                console.error("Cache DB creation error");
+                console.error("MQTT - Cache DB creation error");
                 mqtt.onInitError();
                 return false;
               });
-          },
-          function transactionError(error) {
-            console.error("Cache DB transaction error: " + JSON.stringify(error));
-            mqtt.onInitError();
-            return false;
-          });
+            },
+            function transactionError(error) {
+              console.error("MQTT - Cache DB transaction error: " + JSON.stringify(error));
+              mqtt.onInitError();
+              return false;
+            }
+          );
+          // If the App gets closed and some messages are still sending, the sending status needs to be reset
+          // otherwise this messages won't ever be deleted from the cache db.
+          db.transaction(function (tx) {
+            tx.executeSql("UPDATE cache SET sending = 0 WHERE sending = 1", [],
+              function createSuccess(tx, res){
+                console.log("MQTT - Resetting old sending status");
+              },
+              function createError(){
+                console.error("MQTT - Failed to reset sending status");
+                return false;
+              });
+            },
+            function transactionError(error) {
+              console.error("MQTT - Cache DB transaction error: " + JSON.stringify(error));
+              mqtt.onInitError();
+              return false;
+            }
+          );
         },
         function openDBError(err) {
-          console.error('Cache DB open database error: ' + JSON.stringify(err));
+          console.error('MQTT - Cache DB open database error: ' + JSON.stringify(err));
           mqtt.onInitError();
           return false;
         }
@@ -134,17 +151,17 @@ var mqtt={
 
   connect: function(){
     if (mqtt.host == null){
-      console.error("You have to call init before you connect");
+      console.error("MQTT - You have to call init before you connect");
       return;
     }
     mqtt._connect(
       function(success){
-        console.debug("MQTT connected.");
-        mqtt._resendCached();
+        console.debug("MQTT - Connected.");
+        mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), 1000);
         mqtt.onConnect();
       },
       function(err) {
-        console.debug("MQTT connecting failed. " + err);
+        console.debug("MQTT - Connecting failed. " + err);
         mqtt.onConnectError();
       }
     )
@@ -154,33 +171,62 @@ var mqtt={
     cordova.exec(success, error, "MQTTPlugin", "connect", [mqtt.host, mqtt.port, mqtt.options]);
   },
 
+  _isConnected: function(success, error){
+    cordova.exec(success, error, "MQTTPlugin", "isConnected", []);
+  },
+
   _reconnect: function(){
-    mqtt.disconnect();
-    console.debug("Trying to Reconnect...");
-    mqtt._connect(
-      function connectSuccess(){
-        console.log("(re)Connected Again");
-        mqtt._resendCached();
-        mqtt.onReconnect();
+    mqtt._isConnected(
+      function isAlreadyConnected() {
+        console.log("MQTT - Is already connected again");
       },
-      function connectError(){
-        console.debug("Next try in " + mqtt.reconnectInterval + " seconds.");
-        setTimeout(mqtt.onOffline, mqtt.reconnectInterval * 1000);
-        mqtt.onReconnectError();
+      function notConnected() {
+        if (mqtt.sendCacheInterval) {
+          clearInterval(mqtt.sendCacheInterval);
+        }
+        mqtt._disconnect(
+          function successDisconnect() {
+            console.debug("MQTT - Trying to Reconnect...");
+            mqtt._connect(
+              function connectSuccess(){
+                console.log("MQTT - Reconnected Again");
+                mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), 1000);
+                mqtt.onReconnect();
+              },
+              function connectError(){
+                console.debug("MQTT - Next try in " + mqtt.reconnectInterval + " seconds.");
+                setTimeout(mqtt.onOffline, mqtt.reconnectInterval);
+                mqtt.onReconnectError();
+              }
+            );
+          },
+          function failedToDisconnect() {
+            console.debug("MQTT - Next try in " + mqtt.reconnectInterval + " seconds.");
+            setTimeout(mqtt.onOffline, mqtt.reconnectInterval);
+            mqtt.onReconnectError();
+          }
+        );
       }
     );
   },
 
   disconnect: function(){
-    cordova.exec(
+    if (mqtt.sendCacheInterval) {
+      clearInterval(mqtt.sendCacheInterval);
+    }
+    mqtt._disconnect(
       function(success){
-        console.log("Disconnected.");
+        console.log("MQTT - Disconnected.");
         mqtt.onDisconnect();
       },
       function(err) {
         mqtt.onDisconnectError();
-      },
-      "MQTTPlugin", "disconnect", []);
+      }
+    );
+  },
+
+  _disconnect: function(success, fail) {
+    cordova.exec(success, fail, "MQTTPlugin", "disconnect", []);
   },
 
   publish: function(options, success, fail){
@@ -192,31 +238,30 @@ var mqtt={
     var retain = (isset(options.retain)) ? options.retain : false;
 
     if (mqtt.offlineCaching && mqtt.cache != null){
-      console.log("Cache Publishing " + message);
+      console.debug("MQTT - Add message to cache");
       mqtt.cache.transaction(function(tx){
         tx.executeSql("INSERT INTO cache(topic, message, qos, retain, sending) VALUES(?,?,?,?,?)", [topic, message, qos, retain, 0],
           function insertSuccess(tx, res){
-            mqtt._publishCached(tx);
           },
           function insertError(tx, err){
-            console.error("Caching failed: ", err);
+            console.error("MQTT - Caching failed: ", err);
             return false;
           }
         );
       },
       function transactionError(err){
-        console.error("Caching failed: ", err);
+        console.error("MQTT - Caching failed: ", err);
         return false;
       });
     } else {
-      console.debug("Direct Publishing " + message);
+      console.debug("MQTT - Direct Publishing " + message);
       mqtt._publish(null, topic, message, qos, retain,
         function(message){
           mqtt.onPublish(message);
           success(message);
         },
         function(err) {
-          console.error("Direct publishing failed: ", err);
+          console.error("MQTT - Direct publishing failed: ", err);
           mqtt.onPublishError(err, null);
           fail(err);
         }
@@ -226,44 +271,42 @@ var mqtt={
 
   _resendCached: function(){
     if (mqtt.offlineCaching){
-      mqtt.cache.transaction(function(tx){mqtt._publishCached(tx)});
+      mqtt.cache.transaction(tx => mqtt._publishCached(tx));
     }
   },
 
   _publishCached: function(tx){
-    if (!mqtt.isOnline()) {
-      return;
-    }
     tx.executeSql("SELECT * FROM cache WHERE sending = 0 ORDER BY id", [],
       function selectSuccess(tx, res) {
-        console.debug("Found " + res.rows.length + " cached Messages");
-        for (var i = 0; i < res.rows.length; i++) {
+        console.debug("MQTT - Found " + res.rows.length + " cached Messages");
+        for (var i = 0; i < 1; i++) {
           (function(i, tx) {
             var message = res.rows.item(i);
-            console.debug("Publishing: " + message.id +"| Topic:"+ message.topic +"| Message:"+ message.message +"| QOS:"+ message.qos +"| Retain:"+ message.retain);
+            console.debug("MQTT - Try to publishing: " + message.id + "| Topic:"+ message.topic
+              + "| Message:" + message.message + "| QOS:"+ message.qos + "| Retain:"+ message.retain);
             tx.executeSql("UPDATE cache SET sending = 1 WHERE id = ? AND sending = 0", [message.id],
               function updateSuccess(tx, res){
-                console.debug("locked Message " + message.id);
+                console.debug("MQTT - Locked Message " + message.id);
                 mqtt._publish(message.id, message.topic, message.message, message.qos, message.retain,
 
                   function publishSuccess(message){
                     var id = message.cacheId;
-                    console.debug("Message " + id + " published");
+                    console.debug("MQTT - Message " + id + " published");
                     mqtt.cache.transaction(
                       function(tx){
-                        console.debug("Deleting Message " + id + " from cache");
+                        console.debug("MQTT - Try to deleting Message " + id + " from cache");
                         tx.executeSql("DELETE FROM cache WHERE id = ?", [id],
                           function deleteSuccess(tx, res){
-                            console.debug("Deleted Message " + id + " from cache");
+                            console.debug("MQTT - Deleted Message " + id + " from cache");
                           },
                           function deleteError(err){
-                            console.error("DELETE Message. Error: "+ err);
+                            console.error("MQTT - DELETE Message. Error: "+ err);
                             return false;
                           }
                         );
                       },
                       function transactionError(error){
-                        console.error("INSERT TRANSACTION error: " + error);
+                        console.error("MQTT - INSERT TRANSACTION error: " + error);
                         return false;
                       }
                     );
@@ -271,31 +314,32 @@ var mqtt={
                     mqtt.onPublish(message);
                   },
                   function publishError(result){
-                    console.error("publishing failed : " + result.id );
+                    console.debug("MQTT - Publishing failed : " + result.id );
                     mqtt.cache.transaction(
                       function(tx){
-                        console.debug("resetting lock on " + result.id );
+                        console.debug("MQTT - Try to resetting lock on " + result.id );
                         tx.executeSql("UPDATE cache SET sending = 0 WHERE id = ?", [result.id], function(tx, res){
-                          console.debug("UPDATE lock resetted on " + result.id );
+                          console.debug("MQTT - UPDATE lock resetted on " + result.id );
                         }, function(error){
-                          console.error("UPDATE lock NOT resetted on " + result.id );
+                          console.error("MQTT - UPDATE lock NOT resetted on " + result.id );
                           return false;
                         });
                       }
                     );
+                    mqtt._reconnect();
                     mqtt.onPublishError(result.error, result.id);
                   }
                 );
               },
               function updateError(error){
-                console.error("UPDATE error: " + error);
+                console.error("MQTT - UPDATE error: " + error);
               }
             );
           })(i, tx);
         }
       },
       function selectError(err){
-        console.error("SELECT error: " + err);
+        console.error("MQTT - SELECT error: " + err);
         return false;
       }
     );
@@ -308,14 +352,14 @@ var mqtt={
   subscribe: function(options){ //topic, qos){
     var topic = (isset(options.topic)) ? options.topic : "public";
     var qos = (isset(options.qos)) ? options.qos : 0;
-    console.debug("call subscribe on topic " + topic);
+    console.debug("MQTT - Call subscribe on topic " + topic);
     cordova.exec(
       function(success){
-        console.debug("subscribe success");
+        console.debug("MQTT - Subscribe success");
         mqtt.onSubscribe();
       },
       function(err) {
-        console.error("subscribe subscribe error");
+        console.error("MQTT - Subscribe subscribe error");
         mqtt.onSubscribeError();
       },
       "MQTTPlugin", "subscribe", [topic, qos]);
@@ -323,101 +367,103 @@ var mqtt={
 
   unsubscribe: function (options){ //topic){
     var topic = (isset(options.topic)) ? options.topic : "public";
-    console.debug("call unsubscribe on topic " + topic);
+    console.debug("MQTT - Call unsubscribe on topic " + topic);
     cordova.exec(
       function(success){
-        console.debug("unsubscribe success");
+        console.debug("MQTT - Unsubscribe success");
         mqtt.onUnsubscribe();
       },
       function(err) {
-        console.error("unsubscribe error");
+        console.error("MQTT - Unsubscribe error");
         mqtt.onUnsubscribeError();
       },
       "MQTTPlugin", "unsubscribe", [topic]);
   },
 
   onInit: function(){
-    console.debug("onInit");
+    console.debug("MQTT - onInit");
   },
   onInitError: function(){
-    console.error("onInitError");
+    console.error("MQTT - onInitError");
   },
 
   onConnect: function(){
-    console.debug("onConnect");
+    console.debug("MQTT - onConnect");
   },
   onConnectError: function(){
-    console.error("onConnectError");
+    console.error("MQTT - onConnectError");
   },
 
   onReconnect: function(){
-    console.debug("onReconnect");
+    console.debug("MQTT - onReconnect");
   },
   onReconnectError: function(){
-    console.error("onReconnectError");
+    console.error("MQTT - onReconnectError");
   },
 
   onDisconnect: function(){
-    console.debug("onDisconnect");
+    console.debug("MQTT - onDisconnect");
   },
   onDisconnectError: function(){
-    console.debug("onDisconnectError");
+    console.debug("MQTT - onDisconnectError");
   },
 
   onPublish: function(cacheId){
-    console.debug("onPublish " + cacheId);
+    console.debug("MQTT - onPublish " + cacheId);
   },
+
   onPublishError: function(error, id){
-    console.debug("onPublishError " + id + ": ", error );
+    console.debug("MQTT - onPublishError " + id + ": ", error );
   },
 
   onSubscribe: function(){
-    console.debug("onSubscribe");
+    console.debug("MQTT - onSubscribe");
   },
   onSubscribeError: function(){
-    console.debug("onSubscribeError");
+    console.debug("MQTT - onSubscribeError");
   },
 
   onUnsubscribe: function(){
-    console.debug("onUnsubscribe");
+    console.debug("MQTT - onUnsubscribe");
   },
   onUnsubscribeError: function(){
     console.debug("onUnsubscribeError");
   },
 
   onMessage: function(topic, message, packet){
-    console.debug("onMessage");
+    console.debug("MQTT - onMessage");
   },
   onMessageError: function(topic, message, packet){
-    console.debug("onMessageError");
+    console.debug("MQTT - onMessageError");
   },
 
   onDelivered: function(){
-    console.debug("onDelivered");
+    console.debug("MQTT - onDelivered");
   },
 
   onOnline: function(){
-    console.debug("Hi i am online");
+    console.debug("MQTT - Hi i am online");
   },
+
   onOffline: function(){
     mqtt._reconnect();
   },
 
   onError: function(){
-    console.debug("onError");
+    console.debug("MQTT - onError");
   },
 
   showCache: function(){
     mqtt.cache.readTransaction(function(tx){
       tx.executeSql("SELECT * FROM cache ORDER BY id", [],
         function(tx, res){
-          console.debug("BEGIN");
+          console.debug("MQTT - BEGIN");
           for (var i = 0; i < res.rows.length; i++){
             //(function(i, tx){
             var message = res.rows.item(i);
             console.debug(message.id +" | "+ message.topic +" | "+ message.message +" | "+ message.qos +" | "+ message.retain + " | " + message.sending);
           }
-          console.debug("END");
+          console.debug("MQTT - END");
         }
       );
     });

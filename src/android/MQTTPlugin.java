@@ -18,15 +18,15 @@ import java.io.InputStream;
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import android.net.Uri;
 import android.util.Log;
 import android.content.Context;
 
-import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttAsyncClient;
+import org.eclipse.paho.client.mqttv3.IMqttActionListener;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.IMqttToken;
 import org.eclipse.paho.client.mqttv3.MqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
@@ -39,33 +39,24 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
 
   private final String TAG = "MQTTPlugin";
-  private MqttClient client;
+  private MqttAsyncClient client;
   private MqttConnectOptions connOpts;
-  private CallbackContext onConnectCallbackContext;
-  private CallbackContext onDisconnectCallbackContext;
-  private CallbackContext onSubscribeCallbackContext;
-  private CallbackContext onUnsubscribeCallbackContext;
-
-  private final Lock lock = new ReentrantLock();
 
   public void deliveryComplete(IMqttDeliveryToken token) {
-    JSONObject message = new JSONObject();
-    final String jsonString = message.toString();
     final CordovaWebView webView_ = webView;
     cordova.getActivity().runOnUiThread(new Runnable() {
       public void run() {
-        webView_.loadUrl(String.format("javascript:mqtt.onDelivered(%s);", jsonString));
+        webView_.loadUrl("javascript:mqtt.onDelivered();");
       }
     });
   }
 
   public void connectionLost(Throwable cause){
-    JSONObject message = new JSONObject();
-    final String jsonString = message.toString();
     final CordovaWebView webView_ = webView;
+    Log.d(TAG, "Callback - Connection lost", cause);
     cordova.getActivity().runOnUiThread(new Runnable() {
       public void run() {
-        webView_.loadUrl(String.format("javascript:mqtt.onOffline(%s);", jsonString));
+        webView_.loadUrl("javascript:mqtt.onOffline();");
       }
     });
   }
@@ -136,59 +127,81 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
   }
 
   private void connect(final String host, final int port, final JSONObject options, final CallbackContext callbackContext){
+    Log.d(TAG, "Try to connect");
     final Context context = cordova.getActivity().getApplicationContext();
     final MQTTPlugin self = this;
 
     cordova.getThreadPool().execute(new Runnable() {
       public void run() {
-        String clientId = "mqtt-client";
+        Log.d(TAG, "Start connecting thread");
+        String clientId = "mqtt-client-" + MqttAsyncClient.generateClientId();
         String protocol = "tcp";
         try {
           if (options.has("ssl") && options.getBoolean("ssl")) {
             protocol = "ssl";
           }
+
           if (options.has("clientId")) {
-            clientId = options.getString("clientId");
+            String optClientId = options.getString("clientId");
+            if (optClientId != null && !"null".equals(optClientId)) {
+              clientId = options.getString("clientId");
+            }
           }
           final MemoryPersistence persistence = new MemoryPersistence();
-          lock.lock();
-          client = new MqttClient(protocol + "://" + host + ":" + port, clientId, persistence);
+          String serverUri = protocol + "://" + host + ":" + port;
+
           connOpts = new MqttConnectOptions();
           connOpts.setCleanSession(true);
+          // connOpts.setAutomaticReconnect(true);
 
           if (options.has("username")) connOpts.setUserName(options.getString("username"));
           if (options.has("password")) connOpts.setPassword(options.getString("password").toCharArray());
           if (options.has("keepAlive")) connOpts.setKeepAliveInterval(options.getInt("keepAlive"));
           if (options.has("cleanSession")) connOpts.setCleanSession(options.getBoolean("cleanSession"));
           if (options.has("protocol")) connOpts.setMqttVersion(options.getInt("protocol"));
-
           if (options.has("will")){
             JSONObject will = options.getJSONObject("will");
             connOpts.setWill(options.getString("topic"), options.getString("message").getBytes(), options.getInt("qos"), options.getBoolean("retain"));
           }
-          Log.d(TAG, "connect "+host+":"+port);
+          Log.d(TAG, "connect to" + host + ":" + port);
           Log.d(TAG, "=================");
-          Log.d(TAG, "clientId: " + client.getClientId());
+          Log.d(TAG, "clientId: " + clientId);
           Log.d(TAG, "userName: " + connOpts.getUserName());
           Log.d(TAG, "password: " + connOpts.getPassword());
           Log.d(TAG, "keepAliveInterval: " + connOpts.getKeepAliveInterval());
           Log.d(TAG, "cleanSessionFlag: " + (connOpts.isCleanSession()?"true":"false"));
           Log.d(TAG, "protocolLevel: " + connOpts.getMqttVersion());
           Log.d(TAG, "ssl: " + (protocol.equals("ssl")?"true":"false"));
-          client.connect(connOpts);
 
+          client = new MqttAsyncClient(serverUri, clientId, persistence);
           client.setCallback((MqttCallback) self);
-          JSONObject ret = new JSONObject();
-          ret.put("status", client.isConnected()?1:0);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
-        } catch(JSONException e) {
-          Log.d(TAG, "Exception", e);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
-        } catch(MqttException e1) {
+          client.connect(connOpts, null, new IMqttActionListener() {
+            @Override
+            public void onSuccess(IMqttToken asyncActionToken) {
+              try {
+                Log.d(TAG, "Connected");
+                JSONObject ret = new JSONObject();
+                ret.put("status", 1);
+                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
+              } catch (JSONException e) {
+                Log.d(TAG, "Exception", e);
+                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
+              }
+            }
+            @Override
+            public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+              try {
+                JSONObject ret = new JSONObject();
+                ret.put("status", 0);
+                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, ret));
+              } catch (JSONException e) {
+                Log.d(TAG, "Exception", e);
+                callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
+              }
+            }
+          });
+        } catch(Exception e1) {
           Log.d(TAG, "Exception", e1);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e1.getMessage()));
-        } finally {
-          lock.unlock();
         }
       }
     });
@@ -198,24 +211,48 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
     cordova.getThreadPool().execute(new Runnable() {
       public void run() {
         try {
-          lock.lock();
           if (client != null && client.isConnected()) {
-            client.disconnect();
+            client.disconnect(30, null, new IMqttActionListener() {
+              @Override
+              public void onSuccess(IMqttToken asyncActionToken) {
+                try {
+                  client.close();
+                  JSONObject ret = new JSONObject();
+                  ret.put("status", 0);
+                  callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
+                } catch (Exception e) {
+                  Log.d(TAG, "Exception", e);
+                  callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
+                }
+              }
+              @Override
+              public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                try {
+                  client.close();
+                  JSONObject ret = new JSONObject();
+                  ret.put("status", 0);
+                  callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, ret));
+                } catch (Exception e) {
+                  Log.d(TAG, "Exception", e);
+                  callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
+                }
+              }
+            });
           }
-          JSONObject ret = new JSONObject();
-          ret.put("status", (client != null && client.isConnected()) ? 1 : 0);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
-        } catch(MqttException e) {
-          Log.d(TAG, "Exception", e);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
-        } catch(JSONException e1) {
-          Log.d(TAG, "Exception", e1);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e1.getMessage()));
+          else if (client != null) {
+            client.close();
+          }
+
+          try {
+            JSONObject ret = new JSONObject();
+            ret.put("status", 0);
+            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
+          } catch (JSONException e) {
+            Log.d(TAG, "Exception", e);
+            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
+          }
         } catch(Exception e2) {
           Log.d(TAG, "Exception", e2);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e2.getMessage()));
-        } finally {
-          lock.unlock();
         }
       }
     });
@@ -225,18 +262,24 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
     cordova.getThreadPool().execute(new Runnable() {
       public void run() {
         try {
-          lock.lock();
+          boolean status = false;
+          status = client != null && client.isConnected();
+          Log.d(TAG, "Mqtt connected status " + status);
+          if (status) {
+            JSONObject ret = new JSONObject();
+            ret.put("status", 1);
+            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
+          }
           JSONObject ret = new JSONObject();
-          ret.put("status", (client != null && client.isConnected()) ? 1 : 0);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
+          ret.put("status", 0);
+          Log.d(TAG, "Unconnected");
+          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, ret));
         } catch(JSONException e1) {
           Log.d(TAG, "Exception", e1);
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e1.getMessage()));
         } catch(Exception e2) {
           Log.d(TAG, "Exception", e2);
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e2.getMessage()));
-        } finally {
-          lock.unlock();
         }
       }
     });
@@ -248,21 +291,41 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
       public void run() {
         try {
           long startTime = System.currentTimeMillis();
-          lock.lock();
-          client.publish(topic, msg.getBytes(), qos, retained);
-          Log.d(TAG, "Time: " + (System.currentTimeMillis()-startTime) + "[ms]");
-          JSONObject ret = new JSONObject();
-          if (id != null){
-            ret.put("cacheId", id);
+          synchronized(this) {
+            client.publish(topic, msg.getBytes(), qos, retained, null, new IMqttActionListener() {
+              @Override
+              public void onSuccess(IMqttToken asyncActionToken) {
+                Log.d(TAG, "Time: " + (System.currentTimeMillis()-startTime) + "[ms]");
+                try {
+                  JSONObject ret = new JSONObject();
+                  if (id != null){
+                    ret.put("cacheId", id);
+                  }
+                  ret.put("topic", topic);
+                  ret.put("message", msg);
+                  ret.put("qos", qos);
+                  ret.put("retain", retained);
+                  callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
+                } catch (JSONException e) {
+                  Log.d(TAG, "Exception", e);
+                  callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
+                }
+              }
+
+              @Override
+              public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                try {
+                  JSONObject err = new JSONObject();
+                  err.put("id", id);
+                  err.put("error", exception.getMessage());
+                  callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, err));
+                } catch (JSONException e) {
+                  Log.d(TAG, "Exception", e);
+                  callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
+                }
+              }
+            });
           }
-          ret.put("topic", topic);
-          ret.put("message", msg);
-          ret.put("qos", qos);
-          ret.put("retain", retained);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
-        } catch (JSONException jsonException) {
-          Log.d(TAG, "Exception", jsonException);
-          callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, jsonException.getMessage()));
         } catch (Exception e) {
           Log.d(TAG, "Exception", e);
           try {
@@ -270,11 +333,10 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
             err.put("id", id);
             err.put("error", e.getMessage());
             callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, err));
-          } catch(JSONException jsonException){
-            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, jsonException.getMessage()));
+          } catch (JSONException e1) {
+            Log.d(TAG, "Exception", e1);
+            callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e1.getMessage()));
           }
-        } finally {
-          lock.unlock();
         }
       }
     });
@@ -284,7 +346,6 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
     cordova.getThreadPool().execute(new Runnable() {
       public void run() {
         try {
-          lock.lock();
           client.subscribe(topic, qos);
           JSONObject ret = new JSONObject();
           ret.put("topic", topic);
@@ -295,8 +356,6 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
         } catch(JSONException jsonException) {
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, jsonException.getMessage()));
-        } finally {
-          lock.unlock();
         }
       }
     });
@@ -306,7 +365,6 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
     cordova.getThreadPool().execute(new Runnable() {
       public void run() {
         try {
-          lock.lock();
           client.unsubscribe(topic);
           JSONObject ret = new JSONObject();
           ret.put("topic", topic);
@@ -316,8 +374,6 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
           callbackContext.error(e.getMessage());
         } catch(JSONException jsonException) {
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, jsonException.getMessage()));
-        } finally {
-          lock.unlock();
         }
       }
     });
