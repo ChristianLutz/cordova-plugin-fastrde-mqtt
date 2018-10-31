@@ -13,8 +13,10 @@ var mqtt={
   protocol: null,
   will: null,
   cache: null,
-  reconnectInterval: 10000,
-  sendCacheInterval: null,
+  reconnectTime: 10000,
+  reconnectTimeout: null,
+  sendCacheTime: 1000,
+  sendCacheInterval: undefined,
 
   init: function(options){
     mqtt.host = required(options.host);
@@ -35,11 +37,14 @@ var mqtt={
     if (mqtt.offlineCaching){
       mqtt.cache = window.sqlitePlugin.openDatabase({name: "mqttcache.db", location: 'default'},
         function(db) {
-          db.executeSql("PRAGMA synchronous=OFF", [], function(){
-          }, function(error){
-            console.log("PRAGMA error: ", error);
-            return false;
-          });
+          db.executeSql("PRAGMA synchronous=OFF", [],
+            function(){
+            },
+            function(error){
+              console.log("PRAGMA error: ", error);
+              return false;
+            }
+          );
           if (mqtt.debug_deleteTable){
             db.transaction(function (tx) {
               tx.executeSql("DROP TABLE cache;",
@@ -86,6 +91,14 @@ var mqtt={
               console.error("MQTT - Cache DB transaction error: " + JSON.stringify(error));
               mqtt.onInitError();
               return false;
+            }
+          );
+          // Print number of elements in cache
+          db.transaction(function (tx) {
+            tx.executeSql("SELECT * FROM cache WHERE sending = 0 ORDER BY id", [],
+              function createSuccess(tx, res){
+                console.log("MQTT - " + res.rows.length + " pending cached messages");
+              });
             }
           );
         },
@@ -157,7 +170,7 @@ var mqtt={
     mqtt._connect(
       function(success){
         console.debug("MQTT - Connected.");
-        mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), 1000);
+        mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), mqtt.sendCacheTime);
         mqtt.onConnect();
       },
       function(err) {
@@ -176,38 +189,46 @@ var mqtt={
   },
 
   _reconnect: function(){
-    mqtt._isConnected(
-      function isAlreadyConnected() {
-        console.log("MQTT - Is already connected again");
-      },
-      function notConnected() {
-        if (mqtt.sendCacheInterval) {
-          clearInterval(mqtt.sendCacheInterval);
-        }
-        mqtt._disconnect(
-          function successDisconnect() {
-            console.debug("MQTT - Trying to Reconnect...");
-            mqtt._connect(
-              function connectSuccess(){
-                console.log("MQTT - Reconnected Again");
-                mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), 1000);
-                mqtt.onReconnect();
-              },
-              function connectError(){
-                console.debug("MQTT - Next try in " + mqtt.reconnectInterval + " seconds.");
-                setTimeout(mqtt.onOffline, mqtt.reconnectInterval);
-                mqtt.onReconnectError();
-              }
-            );
+    if (!mqtt.reconnectTimeout) {
+      if (mqtt.sendCacheInterval) {
+        mqtt.sendCacheInterval = clearInterval(mqtt.sendCacheInterval);
+      }
+      mqtt.reconnectTimeout = setTimeout(() => {
+        mqtt._isConnected(
+          function isAlreadyConnected() {
+            mqtt.reconnectTimeout = null;
+            console.log("MQTT - Is already connected again");
+            if (!mqtt.sendCacheInterval) {
+              mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), mqtt.sendCacheTime);
+            }
           },
-          function failedToDisconnect() {
-            console.debug("MQTT - Next try in " + mqtt.reconnectInterval + " seconds.");
-            setTimeout(mqtt.onOffline, mqtt.reconnectInterval);
-            mqtt.onReconnectError();
+          function notConnected() {
+            mqtt._disconnect( // cleanUp used resources
+              function successDisconnect() {
+                console.debug("MQTT - Trying to Reconnect...");
+                mqtt._connect(
+                  () => {
+                    mqtt.reconnectTimeout = null;
+                    console.log("MQTT - Reconnected Again");
+                    mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), mqtt.sendCacheTime);
+                    mqtt.onReconnect();
+                  },
+                  () => mqtt._triggerReconnect()
+                );
+              },
+              () => mqtt._triggerReconnect()
+            );
           }
         );
-      }
-    );
+      }, mqtt.reconnectTime);
+    }
+  },
+
+  _triggerReconnect() {
+    mqtt.reconnectTimeout = null;
+    console.debug("MQTT - Next try in " + mqtt.reconnectTime + " seconds.");
+    mqtt.onOffline();
+    mqtt.onReconnectError();
   },
 
   disconnect: function(){
@@ -242,6 +263,7 @@ var mqtt={
       mqtt.cache.transaction(function(tx){
         tx.executeSql("INSERT INTO cache(topic, message, qos, retain, sending) VALUES(?,?,?,?,?)", [topic, message, qos, retain, 0],
           function insertSuccess(tx, res){
+            console.debug("MQTT - Successfully added message to cache");
           },
           function insertError(tx, err){
             console.error("MQTT - Caching failed: ", err);
@@ -276,10 +298,10 @@ var mqtt={
   },
 
   _publishCached: function(tx){
-    tx.executeSql("SELECT * FROM cache WHERE sending = 0 ORDER BY id", [],
+    tx.executeSql("SELECT * FROM cache WHERE sending = 0 ORDER BY id LIMIT 1", [],
       function selectSuccess(tx, res) {
-        console.debug("MQTT - Found " + res.rows.length + " cached Messages");
-        for (var i = 0; i < 1; i++) {
+        var amountToExecute = res.rows.length > 0 ? 1 : 0;
+        for (var i = 0; i < amountToExecute; i++) {
           (function(i, tx) {
             var message = res.rows.item(i);
             console.debug("MQTT - Try to publishing: " + message.id + "| Topic:"+ message.topic

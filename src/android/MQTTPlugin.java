@@ -291,7 +291,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
       public void run() {
         try {
           long startTime = System.currentTimeMillis();
-          synchronized(this) {
+          synchronized(client) {
             client.publish(topic, msg.getBytes(), qos, retained, null, new IMqttActionListener() {
               @Override
               public void onSuccess(IMqttToken asyncActionToken) {
