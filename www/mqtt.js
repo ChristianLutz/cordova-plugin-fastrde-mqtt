@@ -95,7 +95,7 @@ var mqtt={
           );
           // Print number of elements in cache
           db.transaction(function (tx) {
-            tx.executeSql("SELECT * FROM cache WHERE sending = 0 ORDER BY id", [],
+            tx.executeSql("SELECT COUNT(id) FROM cache", [],
               function createSuccess(tx, res){
                 console.log("MQTT - " + res.rows.length + " pending cached messages");
               });
