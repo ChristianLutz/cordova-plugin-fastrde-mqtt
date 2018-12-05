@@ -5,6 +5,7 @@ import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
 import org.apache.cordova.CordovaResourceApi;
 import org.apache.cordova.CordovaWebView;
+import org.apache.cordova.LOG;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -20,7 +21,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 import android.net.Uri;
-import android.util.Log;
 import android.content.Context;
 
 import org.eclipse.paho.client.mqttv3.MqttAsyncClient;
@@ -53,7 +53,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
 
   public void connectionLost(Throwable cause){
     final CordovaWebView webView_ = webView;
-    Log.d(TAG, "Callback - Connection lost", cause);
+    LOG.d(TAG, "Callback - Connection lost", cause);
     cordova.getActivity().runOnUiThread(new Runnable() {
       public void run() {
         webView_.loadUrl("javascript:mqtt.onOffline();");
@@ -74,7 +74,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
         webView_.loadUrl(String.format("javascript:mqtt.onMessage(%s);", jsonString));
       }
     });
-    Log.d(TAG, String.format("mqtt.onMessage(%s);", message.toString()));
+    LOG.d(TAG, "mqtt.onMessage(%s)", message);
   }
 
   public boolean execute(String action, JSONArray args, final CallbackContext callbackContext) throws JSONException {
@@ -95,7 +95,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
       }else{
         options = new JSONObject();
       }
-      Log.d(TAG, "" + host + " : " + port);
+      LOG.d(TAG, "%s : %d", host, port);
       connect(host, port, options, callbackContext);
       return true;
     } //Disconnect
@@ -127,13 +127,13 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
   }
 
   private void connect(final String host, final int port, final JSONObject options, final CallbackContext callbackContext){
-    Log.d(TAG, "Try to connect");
+    LOG.d(TAG, "Try to connect");
     final Context context = cordova.getActivity().getApplicationContext();
     final MQTTPlugin self = this;
 
     cordova.getThreadPool().execute(new Runnable() {
       public void run() {
-        Log.d(TAG, "Start connecting thread");
+        LOG.d(TAG, "Start connecting thread");
         String clientId = "mqtt-client-" + MqttAsyncClient.generateClientId();
         String protocol = "tcp";
         try {
@@ -163,15 +163,15 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
             JSONObject will = options.getJSONObject("will");
             connOpts.setWill(options.getString("topic"), options.getString("message").getBytes(), options.getInt("qos"), options.getBoolean("retain"));
           }
-          Log.d(TAG, "connect to" + host + ":" + port);
-          Log.d(TAG, "=================");
-          Log.d(TAG, "clientId: " + clientId);
-          Log.d(TAG, "userName: " + connOpts.getUserName());
-          Log.d(TAG, "password: " + connOpts.getPassword());
-          Log.d(TAG, "keepAliveInterval: " + connOpts.getKeepAliveInterval());
-          Log.d(TAG, "cleanSessionFlag: " + (connOpts.isCleanSession()?"true":"false"));
-          Log.d(TAG, "protocolLevel: " + connOpts.getMqttVersion());
-          Log.d(TAG, "ssl: " + (protocol.equals("ssl")?"true":"false"));
+          LOG.d(TAG, "connect to %s:%d", host, port);
+          LOG.d(TAG, "=================");
+          LOG.d(TAG, "clientId: %s", clientId);
+          LOG.d(TAG, "userName: %s", connOpts.getUserName());
+          LOG.d(TAG, "password: %s", connOpts.getPassword());
+          LOG.d(TAG, "keepAliveInterval: %s", connOpts.getKeepAliveInterval());
+          LOG.d(TAG, "cleanSessionFlag: %s", (connOpts.isCleanSession()?"true":"false"));
+          LOG.d(TAG, "protocolLevel: %s", connOpts.getMqttVersion());
+          LOG.d(TAG, "ssl: %s", (protocol.equals("ssl")?"true":"false"));
 
           client = new MqttAsyncClient(serverUri, clientId, persistence);
           client.setCallback((MqttCallback) self);
@@ -179,12 +179,12 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
             @Override
             public void onSuccess(IMqttToken asyncActionToken) {
               try {
-                Log.d(TAG, "Connected");
+                LOG.d(TAG, "Connected");
                 JSONObject ret = new JSONObject();
                 ret.put("status", 1);
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
               } catch (JSONException e) {
-                Log.d(TAG, "Exception", e);
+                LOG.d(TAG, "Exception", e);
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
               }
             }
@@ -195,13 +195,13 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
                 ret.put("status", 0);
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, ret));
               } catch (JSONException e) {
-                Log.d(TAG, "Exception", e);
+                LOG.d(TAG, "Exception", e);
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
               }
             }
           });
         } catch(Exception e1) {
-          Log.d(TAG, "Exception", e1);
+          LOG.d(TAG, "Exception", e1);
         }
       }
     });
@@ -221,7 +221,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
                   ret.put("status", 0);
                   callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
                 } catch (Exception e) {
-                  Log.d(TAG, "Exception", e);
+                  LOG.d(TAG, "Exception", e);
                   callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
                 }
               }
@@ -233,7 +233,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
                   ret.put("status", 0);
                   callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, ret));
                 } catch (Exception e) {
-                  Log.d(TAG, "Exception", e);
+                  LOG.d(TAG, "Exception", e);
                   callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
                 }
               }
@@ -248,11 +248,11 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
             ret.put("status", 0);
             callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
           } catch (JSONException e) {
-            Log.d(TAG, "Exception", e);
+            LOG.d(TAG, "Exception", e);
             callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
           }
         } catch(Exception e2) {
-          Log.d(TAG, "Exception", e2);
+          LOG.d(TAG, "Exception", e2);
         }
       }
     });
@@ -264,7 +264,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
         try {
           boolean status = false;
           status = client != null && client.isConnected();
-          Log.d(TAG, "Mqtt connected status " + status);
+          LOG.d(TAG, "Mqtt connected status " + status);
           if (status) {
             JSONObject ret = new JSONObject();
             ret.put("status", 1);
@@ -272,13 +272,13 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
           }
           JSONObject ret = new JSONObject();
           ret.put("status", 0);
-          Log.d(TAG, "Unconnected");
+          LOG.d(TAG, "Unconnected");
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, ret));
         } catch(JSONException e1) {
-          Log.d(TAG, "Exception", e1);
+          LOG.d(TAG, "Exception", e1);
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e1.getMessage()));
         } catch(Exception e2) {
-          Log.d(TAG, "Exception", e2);
+          LOG.d(TAG, "Exception", e2);
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e2.getMessage()));
         }
       }
@@ -286,7 +286,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
   }
 
   private void publish(final Integer id, final String topic, final String msg, final int qos, final boolean retained, final CallbackContext callbackContext){
-    Log.d(TAG, "publish " + topic + " | " + msg);
+    LOG.d(TAG, "publish " + topic + " | " + msg);
     cordova.getThreadPool().execute(new Runnable() {
       public void run() {
         try {
@@ -295,7 +295,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
             client.publish(topic, msg.getBytes(), qos, retained, null, new IMqttActionListener() {
               @Override
               public void onSuccess(IMqttToken asyncActionToken) {
-                Log.d(TAG, "Time: " + (System.currentTimeMillis()-startTime) + "[ms]");
+                LOG.d(TAG, "Time: %d[ms]", (System.currentTimeMillis()-startTime));
                 try {
                   JSONObject ret = new JSONObject();
                   if (id != null){
@@ -307,7 +307,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
                   ret.put("retain", retained);
                   callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
                 } catch (JSONException e) {
-                  Log.d(TAG, "Exception", e);
+                  LOG.d(TAG, "Exception", e);
                   callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
                 }
               }
@@ -320,21 +320,21 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
                   err.put("error", exception.getMessage());
                   callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, err));
                 } catch (JSONException e) {
-                  Log.d(TAG, "Exception", e);
+                  LOG.d(TAG, "Exception", e);
                   callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
                 }
               }
             });
           }
         } catch (Exception e) {
-          Log.d(TAG, "Exception", e);
+          LOG.d(TAG, "Exception", e);
           try {
             JSONObject err = new JSONObject();
             err.put("id", id);
             err.put("error", e.getMessage());
             callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, err));
           } catch (JSONException e1) {
-            Log.d(TAG, "Exception", e1);
+            LOG.d(TAG, "Exception", e1);
             callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e1.getMessage()));
           }
         }
@@ -352,7 +352,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
           ret.put("qos", qos);
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
         } catch(MqttException e) {
-          Log.d(TAG, "Exception", e);
+          LOG.d(TAG, "Exception", e);
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.getMessage()));
         } catch(JSONException jsonException) {
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, jsonException.getMessage()));
@@ -370,7 +370,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
           ret.put("topic", topic);
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, ret));
         } catch(MqttException e) {
-          Log.d(TAG, "Exception", e);
+          LOG.d(TAG, "Exception", e);
           callbackContext.error(e.getMessage());
         } catch(JSONException jsonException) {
           callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, jsonException.getMessage()));
