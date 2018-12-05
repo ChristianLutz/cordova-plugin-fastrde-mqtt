@@ -17,7 +17,7 @@ var mqtt={
   reconnectTimeout: null,
   sendCacheTime: 1000,
   sendCacheInterval: undefined,
-  sendAmountMessage: 0,
+  sendAmountMessage: 0, // Remove after this has been fixed https://github.com/eclipse/paho.mqtt.java/issues/551
 
   init: function(options){
     mqtt.host = required(options.host);
