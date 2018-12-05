@@ -17,6 +17,7 @@ var mqtt={
   reconnectTimeout: null,
   sendCacheTime: 1000,
   sendCacheInterval: undefined,
+  sendAmountMessage: 0,
 
   init: function(options){
     mqtt.host = required(options.host);
@@ -36,7 +37,7 @@ var mqtt={
 
     if (mqtt.offlineCaching){
       mqtt.cache = window.sqlitePlugin.openDatabase({name: "mqttcache.db", location: 'default'},
-        function(db) {
+        function(db) { // Is this a good idea, see https://github.com/litehelpers/Cordova-sqlite-storage/issues/736
           db.executeSql("PRAGMA synchronous=OFF", [],
             function(){
             },
@@ -170,7 +171,8 @@ var mqtt={
     mqtt._connect(
       function(success){
         console.debug("MQTT - Connected.");
-        mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), mqtt.sendCacheTime);
+        mqtt.sendAmountMessage = 0;
+        mqtt._sendCacheInterval();
         mqtt.onConnect();
       },
       function(err) {
@@ -190,17 +192,13 @@ var mqtt={
 
   _reconnect: function(){
     if (!mqtt.reconnectTimeout) {
-      if (mqtt.sendCacheInterval) {
-        mqtt.sendCacheInterval = clearInterval(mqtt.sendCacheInterval);
-      }
+      mqtt._clearCacheInterval();
       mqtt.reconnectTimeout = setTimeout(() => {
         mqtt._isConnected(
           function isAlreadyConnected() {
             mqtt.reconnectTimeout = null;
             console.log("MQTT - Is already connected again");
-            if (!mqtt.sendCacheInterval) {
-              mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), mqtt.sendCacheTime);
-            }
+            mqtt._sendCacheInterval();
           },
           function notConnected() {
             mqtt._disconnect( // cleanUp used resources
@@ -210,7 +208,8 @@ var mqtt={
                   () => {
                     mqtt.reconnectTimeout = null;
                     console.log("MQTT - Reconnected Again");
-                    mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), mqtt.sendCacheTime);
+                    mqtt.sendAmountMessage = 0;
+                    mqtt._sendCacheInterval();
                     mqtt.onReconnect();
                   },
                   () => mqtt._triggerReconnect()
@@ -224,6 +223,18 @@ var mqtt={
     }
   },
 
+  _clearCacheInterval() {
+    if (mqtt.sendCacheInterval) {
+      mqtt.sendCacheInterval = clearInterval(mqtt.sendCacheInterval);
+    }
+  },
+
+  _sendCacheInterval() {
+    if (!mqtt.sendCacheInterval) {
+      mqtt.sendCacheInterval = setInterval(() => mqtt._resendCached(), mqtt.sendCacheTime);
+    }
+  },
+
   _triggerReconnect() {
     mqtt.reconnectTimeout = null;
     console.debug("MQTT - Next try in " + mqtt.reconnectTime + " seconds.");
@@ -231,10 +242,8 @@ var mqtt={
     mqtt.onReconnectError();
   },
 
-  disconnect: function(){
-    if (mqtt.sendCacheInterval) {
-      clearInterval(mqtt.sendCacheInterval);
-    }
+  disconnect: function() {
+    mqtt._clearCacheInterval();
     mqtt._disconnect(
       function(success){
         console.log("MQTT - Disconnected.");
@@ -301,18 +310,20 @@ var mqtt={
     tx.executeSql("SELECT * FROM cache WHERE sending = 0 ORDER BY id LIMIT 1", [],
       function selectSuccess(tx, res) {
         var amountToExecute = res.rows.length > 0 ? 1 : 0;
-        for (var i = 0; i < amountToExecute; i++) {
+        for (var i = 0; i < amountToExecute && mqtt.sendAmountMessage < 40; i++) {
           (function(i, tx) {
             var message = res.rows.item(i);
             console.debug("MQTT - Try to publishing: " + message.id + "| Topic:"+ message.topic
               + "| Message:" + message.message + "| QOS:"+ message.qos + "| Retain:"+ message.retain);
+            mqtt.sendAmountMessage++; // We need to limit the amount of send message at the same time;
             tx.executeSql("UPDATE cache SET sending = 1 WHERE id = ? AND sending = 0", [message.id],
               function updateSuccess(tx, res){
                 console.debug("MQTT - Locked Message " + message.id);
                 mqtt._publish(message.id, message.topic, message.message, message.qos, message.retain,
 
-                  function publishSuccess(message){
+                  function publishSuccess(message) {
                     var id = message.cacheId;
+                    mqtt.sendAmountMessage--;
                     console.debug("MQTT - Message " + id + " published");
                     mqtt.cache.transaction(
                       function(tx){
@@ -335,7 +346,8 @@ var mqtt={
                     delete(message.cacheId);
                     mqtt.onPublish(message);
                   },
-                  function publishError(result){
+                  function publishError(result) {
+                    mqtt.sendAmountMessage--;
                     console.debug("MQTT - Publishing failed : " + result.id );
                     mqtt.cache.transaction(
                       function(tx){
