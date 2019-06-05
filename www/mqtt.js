@@ -206,10 +206,10 @@ var mqtt={
         mqtt.onConnect();
       },
       function(err) {
-        console.debug("MQTT - Connecting failed. " + err);
+        console.debug("MQTT - Connecting failed. ", err);
         mqtt.onConnectError();
       }
-    )
+    );
   },
 
   _connect: function(success, error){
@@ -224,31 +224,37 @@ var mqtt={
     if (!mqtt.reconnectTimeout) {
       mqtt._clearCacheInterval();
       mqtt.reconnectTimeout = setTimeout(() => {
-        mqtt._isConnected(
-          function isAlreadyConnected() {
-            mqtt.reconnectTimeout = null;
-            console.log("MQTT - Is already connected again");
-            mqtt._sendCacheInterval();
-          },
-          function notConnected() {
-            mqtt._disconnect( // cleanUp used resources
-              function successDisconnect() {
-                console.debug("MQTT - Trying to Reconnect...");
-                mqtt._connect(
-                  () => {
-                    mqtt.reconnectTimeout = null;
-                    console.log("MQTT - Reconnected Again");
-                    mqtt.sendAmountMessage = 0;
-                    mqtt._sendCacheInterval();
-                    mqtt.onReconnect();
-                  },
-                  () => mqtt._triggerReconnect()
-                );
-              },
-              () => mqtt._triggerReconnect()
-            );
-          }
-        );
+        if (mqtt.isOnline()) {
+          mqtt._isConnected(
+            function isAlreadyConnected() {
+              mqtt.reconnectTimeout = null;
+              console.log("MQTT - Is already connected again");
+              mqtt._sendCacheInterval();
+            },
+            function notConnected() {
+              mqtt._disconnect( // cleanUp used resources
+                function successDisconnect() {
+                  console.debug("MQTT - Trying to Reconnect...");
+                  mqtt._connect(
+                    () => {
+                      mqtt.reconnectTimeout = null;
+                      console.log("MQTT - Reconnected Again");
+                      mqtt.sendAmountMessage = 0;
+                      mqtt._sendCacheInterval();
+                      mqtt.onReconnect();
+                    },
+                    () => mqtt._triggerReconnect()
+                  );
+                },
+                () => mqtt._triggerReconnect()
+              );
+            }
+          );
+        }
+        else {
+          console.debug("MQTT - We don't have a network connection, so try again later");
+          mqtt._triggerReconnect();
+        }
       }, mqtt.reconnectTime);
     }
   },
@@ -268,8 +274,7 @@ var mqtt={
   _triggerReconnect() {
     mqtt.reconnectTimeout = null;
     console.debug("MQTT - Next try in " + mqtt.reconnectTime + " seconds.");
-    mqtt.onOffline();
-    mqtt.onReconnectError();
+    mqtt._reconnect();
   },
 
   disconnect: function() {
@@ -410,7 +415,7 @@ var mqtt={
   },
 
   _publish: function(id, topic, message, qos, retain, success, error){
-      cordova.exec(success, error, "MQTTPlugin", "publish", [id, topic, message, qos, retain]);
+    cordova.exec(success, error, "MQTTPlugin", "publish", [id, topic, message, qos, retain]);
   },
 
   subscribe: function(options){ //topic, qos){
