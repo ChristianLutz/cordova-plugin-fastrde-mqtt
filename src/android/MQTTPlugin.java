@@ -51,14 +51,23 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
     });
   }
 
-  public void connectionLost(Throwable cause){
-    final CordovaWebView webView_ = webView;
+  public void connectionLost(Throwable cause) {
     LOG.d(TAG, "Callback - Connection lost", cause);
+    final String reason = getReason(cause);
+    final CordovaWebView webView_ = webView;
     cordova.getActivity().runOnUiThread(new Runnable() {
       public void run() {
-        webView_.loadUrl("javascript:mqtt.onOffline();");
+        webView_.loadUrl(String.format("javascript:mqtt.onOffline('%s');", reason));
       }
     });
+  }
+
+  private String getReason(Throwable cause) {
+    String reason = "UNKNOWN";
+    if (cause != null && cause.getMessage() != null) {
+      reason = cause.getMessage();
+    }
+    return reason;
   }
 
   public void messageArrived(String topic, MqttMessage mqttMessage) throws Exception{
@@ -71,7 +80,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
     final CordovaWebView webView_ = webView;
     cordova.getActivity().runOnUiThread(new Runnable() {
       public void run() {
-        webView_.loadUrl(String.format("javascript:mqtt.onMessage(%s);", jsonString));
+        webView_.loadUrl(String.format("javascript:mqtt.onMessage('%s');", jsonString));
       }
     });
     LOG.d(TAG, "mqtt.onMessage(%s)", message);
@@ -212,6 +221,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
       public void run() {
         try {
           if (client != null && client.isConnected()) {
+            LOG.d(TAG, "Disconnect connected client");
             client.disconnect(30, null, new IMqttActionListener() {
               @Override
               public void onSuccess(IMqttToken asyncActionToken) {
@@ -240,6 +250,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
             });
           }
           else if (client != null) {
+            LOG.d(TAG, "Close unconnected client");
             client.close();
           }
 
@@ -262,8 +273,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
     cordova.getThreadPool().execute(new Runnable() {
       public void run() {
         try {
-          boolean status = false;
-          status = client != null && client.isConnected();
+          boolean status = client != null && client.isConnected();
           LOG.d(TAG, "Mqtt connected status " + status);
           if (status) {
             JSONObject ret = new JSONObject();

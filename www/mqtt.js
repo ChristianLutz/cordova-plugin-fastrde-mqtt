@@ -1,5 +1,5 @@
 var mqtt={
-  debug_deleteTable: true,
+  debug_deleteTable: false,
   host: null,
   port: null,
   qos: null,
@@ -259,7 +259,7 @@ var mqtt={
     cordova.exec(success, fail, "MQTTPlugin", "disconnect", []);
   },
 
-  publish: function(options, success, fail){
+  publish: function(options, success, fail) {
     success = success || function(){};
     fail = fail || function(){};
     var topic = (isset(options.topic)) ? options.topic : "public";
@@ -348,7 +348,7 @@ var mqtt={
                   },
                   function publishError(result) {
                     mqtt.sendAmountMessage--;
-                    console.debug("MQTT - Publishing failed : " + result.id );
+                    console.warn("MQTT - Publishing failed : " + result.id  + " " + result.error);
                     mqtt.cache.transaction(
                       function(tx){
                         console.debug("MQTT - Try to resetting lock on " + result.id );
@@ -479,7 +479,8 @@ var mqtt={
     console.debug("MQTT - Hi i am online");
   },
 
-  onOffline: function(){
+  onOffline: function(err){
+    console.warn("MQTT - On Offline " + err);
     mqtt._reconnect();
   },
 
