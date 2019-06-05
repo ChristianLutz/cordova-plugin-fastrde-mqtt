@@ -4,8 +4,13 @@
 Using cordova android > 7 please read this.
 https://gist.github.com/joeljeske/68121fa6d643e0937f50458d0172e16e
 
-## Dev Notes
-With the beginning of 1.4.0-SNAPSHOT a lot has changed.
+## Release Notes
+### 1.5.x
+- Update paho Lib to version 1.2.1
+- Add new method to get cached messages
+- Increase upload time intervall from 1s to 100ms
+
+### 1.4.x
 - Switch from blocking MqttClient to MqttAsyncClient, even with a lock the blocking code didn't work reliable.
 - Replaced the direct cache publishing send with an interval cache publishing. There are two reasons for this
   1. Sometimes messages will be created faster than they may processed. In this case we might run into MqttException.REASON_CODE_MAX_INFLIGHT
@@ -13,6 +18,7 @@ With the beginning of 1.4.0-SNAPSHOT a lot has changed.
   Note: of course there is one downside of the current implemantation. If you have a perfect connection and only rare data comming in the intervall will create some processing overhead you maybe don't like.
 - Reconnect / Error Handling should be improved
 - Update paho Lib to version 1.2.0
+
 
 
 #### mqtt.init(options)
@@ -87,4 +93,9 @@ set callback functions for the given event.
     message - payload of the message
     qos - Quality of Service level
     retain - should the message retain in the channel
+```
+#### mqtt.cached(success, error)
+```
+    success - returnes the amount of cached messages
+    error - if this failes return -1
 ```

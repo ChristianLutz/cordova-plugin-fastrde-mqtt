@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" id="cordova-plugin-fastrde-mqtt" version="1.4.4">
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" id="cordova-plugin-fastrde-mqtt" version="1.5.0">
   <name>MQTT-Client</name>
   <author>Fabian Strachanski</author>
+  <author>Christian Lutz</author>
   <description>Cordova plugin to communicate via mqtt for ios and android</description>
   <license>MIT</license>
   <keywords>mqtt, iot, push, notification</keywords>
