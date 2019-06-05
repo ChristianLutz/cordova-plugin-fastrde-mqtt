@@ -123,6 +123,10 @@ var mqtt={
 
   on: function(evt, success, fail){
     switch(evt){
+      case 'cached':
+        mqtt.onCached = optional(success, function(){console.debug("success");});
+        mqtt.onCachedError = optional(fail, function(){console.log("fail");});
+      break;
       case 'init':
         mqtt.onInit = optional(success, function(){console.debug("success");});
         mqtt.onInitError = optional(fail, function(){console.log("fail");});
@@ -160,6 +164,32 @@ var mqtt={
       case 'offline':
         mqtt.onOffline = optional(success, function(){console.log("offline");});
       break;
+    }
+  },
+
+  cached: function(success, error) {
+    if (mqtt.host == null){
+      console.error("MQTT - You have to call init before you connect");
+      error(-1);
+    }
+    if (mqtt.offlineCaching && mqtt.cache != null) {
+      console.debug("MQTT - Get amount of cache messages");
+      mqtt.cache.transaction(function (tx) {
+        tx.executeSql("SELECT COUNT(*) as amount FROM cache", [],
+          function createSuccess(tx, res) {
+            console.debug("MQTT - " + res.rows.item(0).amount + " pending cached messages");
+            success(res.rows.item(0).amount);
+          },
+          function createError(tx, err) {
+            console.error("MQTT - Failed to read pending cached messages", error);
+            error(-1);
+          }
+        );
+      });
+    }
+    else {
+      console.log("MQTT - Offline caching disabled");
+      error(-1);
     }
   },
 
@@ -412,6 +442,13 @@ var mqtt={
         mqtt.onUnsubscribeError();
       },
       "MQTTPlugin", "unsubscribe", [topic]);
+  },
+
+  onCached: function(){
+    console.debug("MQTT - onCached");
+  },
+  onCachedError: function(){
+    console.error("MQTT - onCachedError");
   },
 
   onInit: function(){
