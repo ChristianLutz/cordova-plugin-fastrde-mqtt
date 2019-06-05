@@ -15,7 +15,7 @@ var mqtt={
   cache: null,
   reconnectTime: 10000,
   reconnectTimeout: null,
-  sendCacheTime: 1000,
+  sendCacheTime: 100,
   sendCacheInterval: undefined,
   sendAmountMessage: 0, // Remove after this has been fixed https://github.com/eclipse/paho.mqtt.java/issues/551
 
@@ -28,7 +28,7 @@ var mqtt={
       username : optional(options.username, null),
       password : optional(options.password, null),
       ssl : optional(options.ssl, false),
-      keepAlive : optional(options.keepAlive, 20),
+      keepAlive : optional(options.keepAlive, 120),
       timeout : optional(options.timeout, 30),
       cleanSession : optional(options.cleanSession, true),
       protocol : optional(options.protocol, 4)
