@@ -519,6 +519,7 @@ var mqtt={
 
   onOnline: function(){
     console.debug("MQTT - Hi i am online");
+    mqtt._reconnect();
   },
 
   onOffline: function(err){
