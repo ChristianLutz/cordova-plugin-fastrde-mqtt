@@ -5,6 +5,10 @@ Using cordova android > 7 please read this.
 https://gist.github.com/joeljeske/68121fa6d643e0937f50458d0172e16e
 
 ## Release Notes
+### 1.6.x
+- Update cordova-sqlite-storage from 2.4 to 3.2.x
+- Also allow range of versions
+
 ### 1.5.x
 - Update paho Lib to version 1.2.1
 - Add new method to get cached messages

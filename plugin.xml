@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" id="cordova-plugin-fastrde-mqtt" version="1.5.0">
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" id="cordova-plugin-fastrde-mqtt" version="1.6.0">
   <name>MQTT-Client</name>
   <author>Fabian Strachanski</author>
   <author>Christian Lutz</author>
@@ -10,8 +10,8 @@
   <repo>https://github.com/iocare/cordova-plugin-fastrde-mqtt.git</repo>
   <issue>https://github.com/iocare/cordova-plugin-fastrde-mqtt/issues</issue>
 
-  <dependency id="cordova-sqlite-storage" version="2.4.0" />
-  <dependency id="cordova-plugin-network-information" version="2.0.1" />
+  <dependency id="cordova-sqlite-storage" version="^3.2.0" />
+  <dependency id="cordova-plugin-network-information" version="^2.0.1" />
 
   <js-module src="www/mqtt.js" name="mqtt">
     <clobbers target="mqtt" />
