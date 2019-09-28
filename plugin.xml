@@ -7,8 +7,8 @@
   <license>MIT</license>
   <keywords>mqtt, iot, push, notification</keywords>
 
-  <repo>https://github.com/iocare/cordova-plugin-fastrde-mqtt.git</repo>
-  <issue>https://github.com/iocare/cordova-plugin-fastrde-mqtt/issues</issue>
+  <repo>https://github.com/ChristianLutz/cordova-plugin-fastrde-mqtt.git</repo>
+  <issue>https://github.com/ChristianLutz/cordova-plugin-fastrde-mqtt/issues</issue>
 
   <dependency id="cordova-sqlite-storage" version="^3.2.0" />
   <dependency id="cordova-plugin-network-information" version="^2.0.1" />
@@ -44,7 +44,7 @@
 
   <platform name="android">
     <source-file src="src/android/MQTTPlugin.java" target-dir="src/de/fastr/cordova/plugin" />
-    <lib-file src="src/android/paho/org.eclipse.paho.client.mqttv3-1.2.1.jar" />
+    <lib-file src="src/android/paho/org.eclipse.paho.client.mqttv3-1.2.2.jar" />
     <config-file target="res/xml/config.xml" parent="/*">
       <feature name="MQTTPlugin">
         <param name="android-package" value="de.fastr.cordova.plugin.MQTTPlugin"/>

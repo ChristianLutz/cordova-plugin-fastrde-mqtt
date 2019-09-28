@@ -11,10 +11,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/iocare/cordova-plugin-fastrde-mqtt"
+    "url": "https://github.com/ChristianLutz/cordova-plugin-fastrde-mqtt"
   },
   "bugs": {
-    "url": "https://github.com/iocare/cordova-plugin-fastrde-mqtt/issues"
+    "url": "https://github.com/ChristianLutz/cordova-plugin-fastrde-mqtt/issues"
   },
   "keywords": [
     "cordova",
@@ -25,9 +25,12 @@
     "push",
     "iot"
   ],
-  "author": {
-    "name": "Fabian Strachanski",
-    "email": "mail@fastr.de"
-  },
+  "contributors": [
+    { "name": "Christian Lutz" },
+    {
+      "name": "Fabian Strachanski",
+      "email": "mail@fastr.de"
+    }
+  ],
   "license": "MIT"
 }
