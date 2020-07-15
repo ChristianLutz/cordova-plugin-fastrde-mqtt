@@ -200,6 +200,7 @@ public class MQTTPlugin extends CordovaPlugin implements MqttCallback {
             @Override
             public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
               try {
+                LOG.d(TAG, "Connecting failed", exception);
                 JSONObject ret = new JSONObject();
                 ret.put("status", 0);
                 callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, ret));
